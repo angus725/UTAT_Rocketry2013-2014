@@ -230,7 +230,9 @@ void Adafruit_MAX31855::readAll(float &internalTemp, double &celsius, uint8_t &e
 namespace thermo
 {
 
+	bool thermoFail = false;
 	bool readThermo;
+
 	bool checkError(Adafruit_MAX31855 checkThis, int reference); //prototype
 
 	Adafruit_MAX31855
@@ -247,10 +249,12 @@ namespace thermo
 			)
 		{
 			SERIALPRINT("Thermocouple checking FAILED\n");
+			thermoFail = true;
 			return true;
 		}
 		else
 			SERIALPRINT("Thermocouple checking PASSED\n");
+		thermoFail = false;
 		return false;
 	}
 
@@ -347,7 +351,6 @@ namespace thermo
 
 
 
-
 void setup()
 {
 
@@ -356,29 +359,29 @@ void setup()
 	Serial.println("MAX31855 test");
 	// wait for MAX chip to stabilize
 	delay(500);
-
+	thermo::checkAll();
 }
 
 void loop()
 {
+	if (!thermo::thermoFail){
+		// basic readout test, just print the current temp
+		Serial.print("Internal Temp = ");
+		Serial.println(thermo::thermo1.readInternal());
 
-	// basic readout test, just print the current temp
-	Serial.print("Internal Temp = ");
-	Serial.println(thermo::thermo1.readInternal());
+		double c = thermo::thermo1.readCelsius();
+		if (isnan(c)) {
+			Serial.println("Something wrong with thermocouple!");
+		}
+		else {
+			Serial.print("C = ");
+			Serial.println(c);
+		}
+		//Serial.print("F = ");
+		//Serial.println(thermocouple.readFarenheit());
 
-	double c = thermo::thermo1.readCelsius();
-	if (isnan(c)) {
-		Serial.println("Something wrong with thermocouple!");
+		delay(1000);
 	}
-	else {
-		Serial.print("C = ");
-		Serial.println(c);
-	}
-	//Serial.print("F = ");
-	//Serial.println(thermocouple.readFarenheit());
-
-	delay(1000);
-
 }
 
 void printInteger(int value)
