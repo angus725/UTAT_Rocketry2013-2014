@@ -391,15 +391,15 @@ void setup()
 void loop()
 {
 	if (!thermo::thermoFail){
-		if (thermo::thermoEnable1)
+		if (!thermo::thermoEnable1)
 		{
 			thermo::printValidData(thermo::thermo1, 1);
 		}
-		if (thermo::thermoEnable2)
+		if (!thermo::thermoEnable2)
 		{
 			thermo::printValidData(thermo::thermo2, 2);
 		}
-		if (thermo::thermoEnable3)
+		if (!thermo::thermoEnable3)
 		{
 			thermo::printValidData(thermo::thermo3, 3);
 		}
