@@ -231,6 +231,9 @@ namespace thermo
 {
 
 	bool thermoFail = false;
+	bool	thermoEnable1 = false,
+			thermoEnable2 = false,
+			thermoEnable3 = false;
 	bool readThermo;
 
 	bool checkError(Adafruit_MAX31855 checkThis, int reference); //prototype
@@ -243,12 +246,10 @@ namespace thermo
 	// 0 for pass, 1 for fail
 	bool checkAll(){
 		bool doesItError = false;
-		bool tempErr = false;
-		doesItError = checkError(thermo1, 1);
-		tempErr = checkError(thermo2, 2);
-		doesItError = tempErr || doesItError;
-		tempErr = checkError(thermo3, 3);
-		doesItError = tempErr || doesItError;
+		thermoEnable1 = checkError(thermo1, 1);
+		thermoEnable2 = checkError(thermo2, 2);
+		thermoEnable3 = checkError(thermo3, 3);
+		doesItError = thermoEnable1 && thermoEnable2 && thermoEnable3;
 		if (doesItError)
 		{
 			SERIALPRINT("Thermocouple checking FAILED\n");
@@ -267,6 +268,9 @@ namespace thermo
 		uint8_t errorCode = checkThis.readError();
 		if (errorCode == 0)
 		{
+			SERIALPRINT("Connected to Thermo couple ");
+			PRINTINTEGER(reference);
+			SERIALPRINT("\n");
 			return false; //no errors
 		}
 		else if (errorCode & B1) //binary
@@ -348,6 +352,25 @@ namespace thermo
 		SERIALPRINT("\n");
 		return externalTemp;
 	}
+
+	void printValidData(Adafruit_MAX31855 & thermocouple, int referenceNum)
+	{
+		// basic readout test, just print the current temp
+		PRINTINTEGER(referenceNum);
+		Serial.print(":\nInternal Temp = ");
+		Serial.println(thermocouple.readInternal());
+
+		double c = thermocouple.readCelsius();
+		if (isnan(c)) {
+			Serial.println("Something wrong with thermocouple!");
+		}
+		else {
+			Serial.print("C = ");
+			Serial.println(c);
+		}
+		//Serial.print("F = ");
+		//Serial.println(thermocouple.readFarenheit());
+	}
 }
 
 
@@ -368,20 +391,19 @@ void setup()
 void loop()
 {
 	if (!thermo::thermoFail){
-		// basic readout test, just print the current temp
-		Serial.print("Internal Temp = ");
-		Serial.println(thermo::thermo1.readInternal());
+		if (thermo::thermoEnable1)
+		{
+			thermo::printValidData(thermo::thermo1, 1);
+		}
+		if (thermo::thermoEnable2)
+		{
+			thermo::printValidData(thermo::thermo2, 2);
+		}
+		if (thermo::thermoEnable3)
+		{
+			thermo::printValidData(thermo::thermo3, 3);
+		}
 
-		double c = thermo::thermo1.readCelsius();
-		if (isnan(c)) {
-			Serial.println("Something wrong with thermocouple!");
-		}
-		else {
-			Serial.print("C = ");
-			Serial.println(c);
-		}
-		//Serial.print("F = ");
-		//Serial.println(thermocouple.readFarenheit());
 
 		delay(1000);
 	}
