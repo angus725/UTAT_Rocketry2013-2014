@@ -2,18 +2,18 @@
 #ifdef SCK
 #define SCK_CUSTOM SCK
 #else
-#define SCK_CUSTOM 20
+#define SCK_CUSTOM 52
 #endif
 
 #ifdef MOSI
 #define MOSI_CUSTOM MOSI
 #else
-#define MOSI_CUSTOM 21
+#define MOSI_CUSTOM 50
 #endif
 
-#define THERMO_1_SELECTOR 22
-#define THERMO_2_SELECTOR 23
-#define THERMO_3_SELECTOR 24
+#define THERMO_1_SELECTOR 47
+#define THERMO_2_SELECTOR 48
+#define THERMO_3_SELECTOR 49
 
 //being lazy...
 #define SERIALPRINT(value) Serial.print(value)
@@ -242,11 +242,14 @@ namespace thermo
 
 	// 0 for pass, 1 for fail
 	bool checkAll(){
-		if (
-			checkError(thermo1, 1) ||
-			checkError(thermo2, 2) ||
-			checkError(thermo3, 3)
-			)
+		bool doesItError = false;
+		bool tempErr = false;
+		doesItError = checkError(thermo1, 1);
+		tempErr = checkError(thermo2, 2);
+		doesItError = tempErr || doesItError;
+		tempErr = checkError(thermo3, 3);
+		doesItError = tempErr || doesItError;
+		if (doesItError)
 		{
 			SERIALPRINT("Thermocouple checking FAILED\n");
 			thermoFail = true;
