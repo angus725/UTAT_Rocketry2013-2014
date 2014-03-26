@@ -48,6 +48,75 @@ BSD license, all text above must be included in any redistribution
 #include <util/delay.h>
 #include <stdlib.h>
 
+
+//Written by Sanjeev Narayanaswamy and Hayden Lau
+//Feb 21, 2014
+#define ARM_PIN 12
+#define IGN_PIN 13
+#define IGN_CONT_PIN A0
+
+//Initialize Variables
+char inputChar;
+int continuityRaw;
+boolean isArmed;
+boolean continuity;
+int contLow = 400; //Continuity Threshold Lower Value
+int contHigh = 1023; //Continuity Threshold Upper Value
+
+
+void(*resetFunc) (void) = 0; // pointer to beginning of program storage? calling this resets the sketch completely
+
+
+
+namespace ignition
+{
+
+	void continuityCheck()
+	{
+		Serial.println("Performing Continuity Test...");
+		continuityRaw = analogRead(IGN_CONT_PIN);
+		//Serial.println(continuityRaw);
+
+		if (continuityRaw < contLow || continuityRaw > contHigh)
+		{
+			Serial.println("ERROR: CONTINUITY PROBLEM");
+			continuity = false;
+		}
+		else
+		{
+			Serial.println("Continuity Acceptable");
+			continuity = true;
+		}
+
+	}
+
+	void arm()
+	{ // arms the circuit
+		Serial.println("Arming...");
+		digitalWrite(ARM_PIN, HIGH);
+		isArmed = true;
+	}
+
+	void disarm()
+	{ // disarms the circuit
+		Serial.println("Disarming...");
+		digitalWrite(IGN_PIN, LOW);
+		digitalWrite(ARM_PIN, LOW);
+		isArmed = false;
+	}
+
+	void fire()
+	{//fires the circuit if armed and continuity is satisfied
+		if ((continuity == true) && (isArmed == true))
+		{
+			Serial.println("Firing...");
+			digitalWrite(IGN_PIN, HIGH);
+		}
+	}
+
+}
+
+
 class Adafruit_MAX31855 {
 public:
 	Adafruit_MAX31855(int8_t SCLK, int8_t CS, int8_t MISO);
@@ -63,7 +132,7 @@ private:
 	uint32_t spiread32(void);
 };
 
-
+//(int8_t SCLK, int8_t CS, int8_t MISO) 
 Adafruit_MAX31855::Adafruit_MAX31855(int8_t SCLK, int8_t CS, int8_t MISO) {
 	sclk = SCLK;
 	cs = CS;
@@ -236,7 +305,8 @@ namespace thermo
 			thermoEnable3 = false;
 	bool readThermo;
 
-	bool checkError(Adafruit_MAX31855 checkThis, int reference); //prototype
+	bool checkError(Adafruit_MAX31855 &checkThis, int reference, bool silent);
+		//prototype
 
 	Adafruit_MAX31855
 		thermo1(SCK_CUSTOM, THERMO_1_SELECTOR, MOSI_CUSTOM),
@@ -246,9 +316,9 @@ namespace thermo
 	// 0 for pass, 1 for fail
 	bool checkAll(){
 		bool doesItError = false;
-		thermoEnable1 = checkError(thermo1, 1);
-		thermoEnable2 = checkError(thermo2, 2);
-		thermoEnable3 = checkError(thermo3, 3);
+		thermoEnable1 = checkError(thermo1, 1, false);
+		thermoEnable2 = checkError(thermo2, 2, false);
+		thermoEnable3 = checkError(thermo3, 3, false);
 		doesItError = thermoEnable1 && thermoEnable2 && thermoEnable3;
 		if (doesItError)
 		{
@@ -262,8 +332,24 @@ namespace thermo
 		return false;
 	}
 
+	bool checkAll(bool silent){
+		bool doesItError = false;
+		thermoEnable1 = checkError(thermo1, 1, true);
+		thermoEnable2 = checkError(thermo2, 2, true);
+		thermoEnable3 = checkError(thermo3, 3, true);
+		doesItError = thermoEnable1 && thermoEnable2 && thermoEnable3;
+		if (doesItError)
+		{
+			SERIALPRINT("Thermocouple checking FAILED\n");
+			thermoFail = true;
+			return true;
+		}
+		thermoFail = false;
+		return false;
+	}
+
 	// refrain from using outside of checkAll if possible
-	bool checkError(Adafruit_MAX31855 checkThis, int reference){
+	bool checkError(Adafruit_MAX31855 &checkThis, int reference, bool silent){
 
 		uint8_t errorCode = checkThis.readError();
 		if (errorCode == 0)
@@ -277,22 +363,18 @@ namespace thermo
 		{
 			SERIALPRINT("OPEN circuit error on thermo couple ");
 			PRINTINTEGER(reference);
-			SERIALPRINT("\n");
 
 		}
 		else if (errorCode & B10) //binary
 		{
 			SERIALPRINT("SHORT TO GROUND circuit error on thermo couple ");
 			PRINTINTEGER(reference);
-			SERIALPRINT("\n");
 
 		}
 		else if (errorCode & B100) //binary
 		{
 			SERIALPRINT("SHORT TO VCC circuit error on thermo couple ");
 			PRINTINTEGER(reference);
-			SERIALPRINT("\n");
-
 		}
 		return true; // error
 	}
@@ -345,7 +427,7 @@ namespace thermo
 			break;
 		}
 
-		SERIALPRINT("Thermocouple_");
+		SERIALPRINT("!Thermocouple_");
 		SERIALPRINT(reference);
 		SERIALPRINT(" tempreture:");
 		PRINTDOUBLE(externalTemp, 2);
@@ -356,16 +438,17 @@ namespace thermo
 	void printValidData(Adafruit_MAX31855 & thermocouple, int referenceNum)
 	{
 		// basic readout test, just print the current temp
-		PRINTINTEGER(referenceNum);
+		Serial.print("!");
+		Serial.print(referenceNum);
 		Serial.print(":\nInternal Temp = ");
 		Serial.println(thermocouple.readInternal());
 
 		double c = thermocouple.readCelsius();
 		if (isnan(c)) {
-			Serial.println("Something wrong with thermocouple!");
+			Serial.println("\nSomething wrong with thermocouple!");
 		}
 		else {
-			Serial.print("C = ");
+			Serial.print("\n!C = ");
 			Serial.println(c);
 		}
 		//Serial.print("F = ");
@@ -375,38 +458,94 @@ namespace thermo
 
 
 
-
-
 void setup()
 {
 
 	Serial.begin(9600);
 
-	Serial.println("MAX31855 test");
-	// wait for MAX chip to stabilize
 	delay(500);
 	thermo::checkAll();
+
+	// initialize serial communications at 9600 bps:
+	pinMode(ARM_PIN, OUTPUT);
+	pinMode(IGN_PIN, OUTPUT);
+	digitalWrite(ARM_PIN, 0);
+	boolean isArmed = false;
+	digitalWrite(IGN_PIN, 0);
+	boolean continuity = false;
+
+	//Print menu to Serial
+	Serial.print("a = arm\nd = disarm\nf = fire\nc = continuity\nr = reset program");
+	Serial.print("\n\n\n");
 }
 
 void loop()
 {
-	if (!thermo::thermoFail){
-		if (!thermo::thermoEnable1)
-		{
-			thermo::printValidData(thermo::thermo1, 1);
-		}
-		if (!thermo::thermoEnable2)
-		{
-			thermo::printValidData(thermo::thermo2, 2);
-		}
-		if (!thermo::thermoEnable3)
-		{
-			thermo::printValidData(thermo::thermo3, 3);
-		}
 
 
-		delay(1000);
+
+	// continously get input
+	while (Serial.available() > 0) Serial.read();
+	// status message
+	if (isArmed)
+		Serial.print(" - ARMED");
+	else
+		Serial.print("Circuit is Disarmed");
+	Serial.println(" - Waiting for command:");
+	// wait for input
+	while (!(Serial.available() > 0))
+	{
+
+		if (!thermo::thermoFail){
+			if (!thermo::thermoEnable1)
+				thermo::printValidData(thermo::thermo1, 1);
+			if (!thermo::thermoEnable2)
+				thermo::printValidData(thermo::thermo2, 2);
+			if (!thermo::thermoEnable3)
+				thermo::printValidData(thermo::thermo3, 3);
+			thermo::checkAll(true); //silent check
+		}
+		else
+			thermo::checkAll();
+		delay(500);
 	}
+	;
+	inputChar = Serial.read();
+	Serial.println("acknowledged\n"); // acknowledge possible command
+	switch (inputChar)
+	{ // which command was it?
+	case 'a':
+	case 'A':
+		ignition::arm();
+		break;
+	case 'd':
+	case 'D':
+		ignition::disarm();
+		break;
+	case 'f':
+	case 'F':
+		ignition::fire();
+		break;
+	case 'c':
+	case 'C':
+		ignition::continuityCheck();
+		break;
+	case 'r':
+	case 'R':
+		//Setting the output pins to low before resetting
+		ignition::disarm();
+		Serial.print("Resetting...");
+		Serial.print("\n\n\n\n");
+		Serial.flush(); // wait for serial to finish transmitting
+		resetFunc(); // reset software completely
+		break;
+
+	default:
+		Serial.println("Error - no matching case");
+		break;
+	}
+
+
 }
 
 void printInteger(int value)
