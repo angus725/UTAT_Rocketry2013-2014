@@ -305,7 +305,7 @@ namespace thermo
 			thermoEnable3 = false;
 	bool readThermo;
 
-	bool checkError(Adafruit_MAX31855 &checkThis, int reference, bool silent);
+	bool checkError(Adafruit_MAX31855 checkThis, int reference, bool silent);
 		//prototype
 
 	Adafruit_MAX31855
@@ -334,9 +334,9 @@ namespace thermo
 
 	bool checkAll(bool silent){
 		bool doesItError = false;
-		thermoEnable1 = checkError(thermo1, 1, true);
-		thermoEnable2 = checkError(thermo2, 2, true);
-		thermoEnable3 = checkError(thermo3, 3, true);
+		thermoEnable1 = checkError(thermo1, 1, false);
+		thermoEnable2 = checkError(thermo2, 2, false);
+		thermoEnable3 = checkError(thermo3, 3, false);
 		doesItError = thermoEnable1 && thermoEnable2 && thermoEnable3;
 		if (doesItError)
 		{
@@ -349,29 +349,29 @@ namespace thermo
 	}
 
 	// refrain from using outside of checkAll if possible
-	bool checkError(Adafruit_MAX31855 &checkThis, int reference, bool silent){
+	bool checkError(Adafruit_MAX31855 checkThis, int reference, bool silent){
 
 		uint8_t errorCode = checkThis.readError();
-		if (errorCode == 0)
+		if (errorCode == 0 && !silent)
 		{
 			SERIALPRINT("Connected to Thermo couple ");
 			PRINTINTEGER(reference);
 			SERIALPRINT("\n");
 			return false; //no errors
 		}
-		else if (errorCode & B1) //binary
+		else if (errorCode & B1 && !silent) //binary
 		{
 			SERIALPRINT("OPEN circuit error on thermo couple ");
 			PRINTINTEGER(reference);
 
 		}
-		else if (errorCode & B10) //binary
+		else if (errorCode & B10 && !silent) //binary
 		{
 			SERIALPRINT("SHORT TO GROUND circuit error on thermo couple ");
 			PRINTINTEGER(reference);
 
 		}
-		else if (errorCode & B100) //binary
+		else if (errorCode & B100 && !silent) //binary
 		{
 			SERIALPRINT("SHORT TO VCC circuit error on thermo couple ");
 			PRINTINTEGER(reference);
