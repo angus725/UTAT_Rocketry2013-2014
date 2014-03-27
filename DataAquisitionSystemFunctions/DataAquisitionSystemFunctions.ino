@@ -22,6 +22,31 @@
 
 
 
+#define PIN_OX_SWITCHACTUATE	9
+#define PIN_OX_SWITCHVENT		8
+#define PIN_OX_CW				11
+#define PIN_OX_CCW				3
+
+#define C_OX_VENT				'1'
+#define C_OX_ACTUATE			'2'
+#define C_OX_OFF				'3'
+#define C_OX_CHECK				'4'
+//#define C_OX_CALIBRATE
+
+#define OX_STATE_VENT			1
+#define OX_STATE_ACTUATE		2
+#define OX_STATE_OFF			0
+#define OX_STATE_MOVING			3
+//#define OX_STATE_CALIBRATE
+
+#define OX_SPEED_TOACTUATE		255
+#define OX_SPEED_TOVENT			-255
+//#define OX_SPEED_OFF			0
+
+#define OX_COUNTSTOCENTER		525
+
+
+
 
 /***************************************************
 This is a library for the Adafruit Thermocouple Sensor w/MAX31855K
@@ -65,7 +90,22 @@ int contHigh = 1023; //Continuity Threshold Upper Value
 
 
 void(*resetFunc) (void) = 0; // pointer to beginning of program storage? calling this resets the sketch completely
+void printDouble(double val, unsigned int precision);
 
+
+namespace OxActuation
+{
+	int state; // current/target state
+	int motorSpeed; // keeps track of current motor speed
+	void init();
+	int checkState();
+	void moveTo(int commandState);
+	void control();
+
+	void initTimer1Count();
+	int checkStateInternal();
+	void motorSetSpeed(int pwmSpd);
+}
 
 
 namespace ignition
@@ -73,18 +113,18 @@ namespace ignition
 
 	void continuityCheck()
 	{
-		Serial.println("Performing Continuity Test...");
+		Serial.println("$Performing Continuity Test...");
 		continuityRaw = analogRead(IGN_CONT_PIN);
 		//Serial.println(continuityRaw);
 
 		if (continuityRaw < contLow || continuityRaw > contHigh)
 		{
-			Serial.println("ERROR: CONTINUITY PROBLEM");
+			Serial.println("$ERROR: CONTINUITY PROBLEM");
 			continuity = false;
 		}
 		else
 		{
-			Serial.println("Continuity Acceptable");
+			Serial.println("$Continuity Acceptable");
 			continuity = true;
 		}
 
@@ -92,14 +132,14 @@ namespace ignition
 
 	void arm()
 	{ // arms the circuit
-		Serial.println("Arming...");
+		Serial.println("$Arming...");
 		digitalWrite(ARM_PIN, HIGH);
 		isArmed = true;
 	}
 
 	void disarm()
 	{ // disarms the circuit
-		Serial.println("Disarming...");
+		Serial.println("$Disarming...");
 		digitalWrite(IGN_PIN, LOW);
 		digitalWrite(ARM_PIN, LOW);
 		isArmed = false;
@@ -109,7 +149,7 @@ namespace ignition
 	{//fires the circuit if armed and continuity is satisfied
 		if ((continuity == true) && (isArmed == true))
 		{
-			Serial.println("Firing...");
+			Serial.println("$Firing...");
 			digitalWrite(IGN_PIN, HIGH);
 		}
 	}
@@ -322,25 +362,25 @@ namespace thermo
 		doesItError = thermoEnable1 && thermoEnable2 && thermoEnable3;
 		if (doesItError)
 		{
-			SERIALPRINT("Thermocouple checking FAILED\n");
+			SERIALPRINT("!Thermocouple checking FAILED\n\n");
 			thermoFail = true;
 			return true;
 		}
 		else
-			SERIALPRINT("Thermocouple checking PASSED\n");
+			SERIALPRINT("!Thermocouple checking PASSED\n");
 		thermoFail = false;
 		return false;
 	}
 
 	bool checkAll(bool silent){
 		bool doesItError = false;
-		thermoEnable1 = checkError(thermo1, 1, false);
-		thermoEnable2 = checkError(thermo2, 2, false);
-		thermoEnable3 = checkError(thermo3, 3, false);
+		thermoEnable1 = checkError(thermo1, 1, silent);
+		thermoEnable2 = checkError(thermo2, 2, silent);
+		thermoEnable3 = checkError(thermo3, 3, silent);
 		doesItError = thermoEnable1 && thermoEnable2 && thermoEnable3;
 		if (doesItError)
 		{
-			SERIALPRINT("Thermocouple checking FAILED\n");
+			SERIALPRINT("!Thermocouple checking FAILED\n\n");
 			thermoFail = true;
 			return true;
 		}
@@ -354,26 +394,26 @@ namespace thermo
 		uint8_t errorCode = checkThis.readError();
 		if (errorCode == 0 && !silent)
 		{
-			SERIALPRINT("Connected to Thermo couple ");
+			SERIALPRINT("!Connected to Thermo couple ");
 			PRINTINTEGER(reference);
 			SERIALPRINT("\n");
 			return false; //no errors
 		}
 		else if (errorCode & B1 && !silent) //binary
 		{
-			SERIALPRINT("OPEN circuit error on thermo couple ");
+			SERIALPRINT("!\nOPEN circuit error on thermo couple ");
 			PRINTINTEGER(reference);
 
 		}
 		else if (errorCode & B10 && !silent) //binary
 		{
-			SERIALPRINT("SHORT TO GROUND circuit error on thermo couple ");
+			SERIALPRINT("!\nSHORT TO GROUND circuit error on thermo couple ");
 			PRINTINTEGER(reference);
 
 		}
 		else if (errorCode & B100 && !silent) //binary
 		{
-			SERIALPRINT("SHORT TO VCC circuit error on thermo couple ");
+			SERIALPRINT("!\nSHORT TO VCC circuit error on thermo couple ");
 			PRINTINTEGER(reference);
 		}
 		return true; // error
@@ -399,10 +439,10 @@ namespace thermo
 			break;
 		}
 
-		SERIALPRINT("Thermocouple_");
+		SERIALPRINT("$Thermocouple_");
 		SERIALPRINT(reference);
-		SERIALPRINT(" internal tempreture:");
-		PRINTDOUBLE(internalTemp, 2);
+		SERIALPRINT("\n internal tempreture:");
+		printDouble(internalTemp, 2);
 		SERIALPRINT("\n");
 		return internalTemp;
 	}
@@ -429,7 +469,7 @@ namespace thermo
 
 		SERIALPRINT("!Thermocouple_");
 		SERIALPRINT(reference);
-		SERIALPRINT(" tempreture:");
+		SERIALPRINT("!\ntempreture:");
 		PRINTDOUBLE(externalTemp, 2);
 		SERIALPRINT("\n");
 		return externalTemp;
@@ -438,18 +478,18 @@ namespace thermo
 	void printValidData(Adafruit_MAX31855 & thermocouple, int referenceNum)
 	{
 		// basic readout test, just print the current temp
-		Serial.print("!");
+		Serial.print("!\n");
 		Serial.print(referenceNum);
-		Serial.print(":\nInternal Temp = ");
-		Serial.println(thermocouple.readInternal());
-
+		Serial.print(": Internal Temp = ");
+		PRINTDOUBLE(thermocouple.readInternal(), 2);
+		Serial.print("\n");
 		double c = thermocouple.readCelsius();
 		if (isnan(c)) {
-			Serial.println("\nSomething wrong with thermocouple!");
+			Serial.println("\n!Something wrong with thermocouple!");
 		}
 		else {
-			Serial.print("\n!C = ");
-			Serial.println(c);
+			Serial.print("\n!Temp reading = ");
+			PRINTDOUBLE(c, 2);
 		}
 		//Serial.print("F = ");
 		//Serial.println(thermocouple.readFarenheit());
@@ -475,8 +515,8 @@ void setup()
 	boolean continuity = false;
 
 	//Print menu to Serial
-	Serial.print("a = arm\nd = disarm\nf = fire\nc = continuity\nr = reset program");
-	Serial.print("\n\n\n");
+	Serial.print("$a = arm\n$d = disarm\n$f = fire\n$c = continuity\n$r = reset program");
+	Serial.print("\n\n");
 }
 
 void loop()
@@ -488,10 +528,10 @@ void loop()
 	while (Serial.available() > 0) Serial.read();
 	// status message
 	if (isArmed)
-		Serial.print(" - ARMED");
+		Serial.print("$ - ARMED");
 	else
-		Serial.print("Circuit is Disarmed");
-	Serial.println(" - Waiting for command:");
+		Serial.print("$Circuit is Disarmed");
+	Serial.println("$ - Waiting for command:");
 	// wait for input
 	while (!(Serial.available() > 0))
 	{
@@ -511,7 +551,7 @@ void loop()
 	}
 	;
 	inputChar = Serial.read();
-	Serial.println("acknowledged\n"); // acknowledge possible command
+	Serial.println("$acknowledged\n"); // acknowledge possible command
 	switch (inputChar)
 	{ // which command was it?
 	case 'a':
@@ -534,14 +574,14 @@ void loop()
 	case 'R':
 		//Setting the output pins to low before resetting
 		ignition::disarm();
-		Serial.print("Resetting...");
-		Serial.print("\n\n\n\n");
+		Serial.print("$Resetting...");
+		Serial.print("\n\n\n");
 		Serial.flush(); // wait for serial to finish transmitting
 		resetFunc(); // reset software completely
 		break;
 
 	default:
-		Serial.println("Error - no matching case");
+		Serial.println("$Error - no matching case");
 		break;
 	}
 
@@ -555,6 +595,7 @@ void printInteger(int value)
 	return;
 }
 
+/*
 void printDouble(double value, int precision)
 {
 	precision = pow(10, precision);
@@ -566,4 +607,20 @@ void printDouble(double value, int precision)
 	else
 		frac = (int(value) - value) * precision;
 	Serial.print(frac, DEC);
+}
+*/
+
+void printDouble(double val, unsigned int precision){
+	// prints val with number of decimal places determine by precision
+	// NOTE: precision is 1 followed by the number of zeros for the desired number of decimial places
+	// example: printDouble( 3.1415, 100); // prints 3.14 (two decimal places)
+
+	Serial.print(int(val));  //prints the int part
+	Serial.print("."); // print the decimal point
+	unsigned int frac;
+	if (val >= 0)
+		frac = (val - int(val)) * precision;
+	else
+		frac = (int(val) - val) * precision;
+	Serial.println(frac, DEC);
 }
