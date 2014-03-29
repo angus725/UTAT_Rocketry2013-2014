@@ -37,5 +37,4 @@ void printDouble(double val, unsigned int precision);
 #include "C:\Program Files (x86)\Arduino\hardware\arduino\avr\cores\arduino\arduino.h"
 #include "C:\Program Files (x86)\Arduino\hardware\arduino\avr\variants\mega\pins_arduino.h" 
 #include "D:\Hayden\Dropbox\Git\UTAT_Rocketry2013-2014\DataAquisitionSystemFunctions\DataAquisitionSystemFunctions.ino"
-#include "D:\Hayden\Dropbox\Git\UTAT_Rocketry2013-2014\DataAquisitionSystemFunctions\OxActuation_Polling.cpp"
 #endif

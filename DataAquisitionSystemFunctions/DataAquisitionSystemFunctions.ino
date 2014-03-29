@@ -35,27 +35,12 @@
 
 #define FIRING_DELAY			1500 // delay between ox actuation start and ignition in ms
 
-
-/***************************************************
-This is a library for the Adafruit Thermocouple Sensor w/MAX31855K
-
-Designed specifically to work with the Adafruit Thermocouple Sensor
-----> https://www.adafruit.com/products/269
-
-These displays use SPI to communicate, 3 pins are required to
-interface
-Adafruit invests time and resources providing this open source code,
-please support Adafruit and open-source hardware by purchasing
-products from Adafruit!
-
-Written by Limor Fried/Ladyada for Adafruit Industries.
-BSD license, all text above must be included in any redistribution
-****************************************************/
-#if (ARDUINO >= 100)
-#include "Arduino.h"
-#else
-#include "WProgram.h"
-#endif
+// copy-paste from Adafruit MAX31855 library
+//#if (ARDUINO >= 100)
+//#include "Arduino.h"
+//#else
+//#include "WProgram.h"
+//#endif
 
 #include <avr/pgmspace.h>
 #include <util/delay.h>
@@ -277,7 +262,7 @@ namespace ignition
 			Serial.println("$Firing...");
 			int startTime = millis();
 			OxActuation::moveTo(OxActuation::actuate);
-			while (millis() - startTime < FIRING_DELAY && !(OxActuation::control());
+			while (millis() - startTime < FIRING_DELAY && !(OxActuation::control()));
 			while (millis() - startTime < FIRING_DELAY);
 			digitalWrite(IGN_PIN, HIGH);
 			while (!OxActuation::control());
@@ -638,13 +623,6 @@ void setup()
 	delay(500);
 	thermo::checkAll();
 
-	//oxidizer actuation
-	pinMode(PIN_OX_SWITCHACTUATE, INPUT_PULLUP);
-	pinMode(PIN_OX_SWITCHVENT, INPUT_PULLUP);
-	pinMode(PIN_OX_CW, OUTPUT);
-	pinMode(PIN_OX_CCW, OUTPUT);
-
-
 	pinMode(ARM_PIN, OUTPUT);
 	pinMode(IGN_PIN, OUTPUT);
 	digitalWrite(ARM_PIN, 0);
@@ -652,19 +630,14 @@ void setup()
 	digitalWrite(IGN_PIN, 0);
 	boolean continuity = false;
 
-
 	OxActuation::init();
 
 	//Print menu to Serial
-	Serial.print("$a = arm\n$d = disarm\n$f = fire\n$c = continuity\n$r = reset program");
-	Serial.print("\n\n");
+	Serial.print("$a = arm\n$d = disarm\n$f = fire\n$c = continuity\n$t = thermocouple\n$r = reset program\n\n");
 }
 
 void loop()
 {
-
-
-
 	// continously get input
 	while (Serial.available() > 0) Serial.read();
 	// status message
@@ -674,25 +647,7 @@ void loop()
 		Serial.print("$Circuit is Disarmed");
 	Serial.println("$ - Waiting for command:");
 	// wait for input
-	while (!(Serial.available() > 0))
-	{
-
-		if (!thermo::thermoFail){
-			if (!thermo::thermoEnable1)
-				thermo::printValidData(thermo::thermo1, 1);
-			if (!thermo::thermoEnable2)
-				thermo::printValidData(thermo::thermo2, 2);
-			if (!thermo::thermoEnable3)
-				thermo::printValidData(thermo::thermo3, 3);
-			thermo::checkAll(true); //silent check
-		}
-		else
-			thermo::checkAll();
-		
-
-		delay(500);
-	}
-	;
+	while (!(Serial.available() > 0));
 	inputChar = Serial.read();
 	Serial.println("$acknowledged\n"); // acknowledge possible command
 	switch (inputChar)
@@ -712,6 +667,20 @@ void loop()
 	case 'c':
 	case 'C':
 		ignition::continuityCheck();
+		break;
+	case 't':
+	case 'T':
+		if (!thermo::thermoFail){
+			if (!thermo::thermoEnable1)
+				thermo::printValidData(thermo::thermo1, 1);
+			if (!thermo::thermoEnable2)
+				thermo::printValidData(thermo::thermo2, 2);
+			if (!thermo::thermoEnable3)
+				thermo::printValidData(thermo::thermo3, 3);
+			thermo::checkAll(true); //silent check
+		}
+		else
+			thermo::checkAll();
 		break;
 	case 'r':
 	case 'R':
