@@ -11,7 +11,7 @@
 #define MOSI_CUSTOM 50
 #endif
 
-#define THERMO_1_SELECTOR 47
+#define THERMO_1_SELECTOR 46
 #define THERMO_2_SELECTOR 48
 #define THERMO_3_SELECTOR 49
 
@@ -33,7 +33,9 @@
 #define OX_COUNTSTOOFF_FROMVENT		725
 #define OX_COUNTSTOOFF_FROMACTUATE	675
 
-#define FIRING_DELAY			1500 // delay between ox actuation start and ignition in ms
+#define FIRING_DELAY			900 // delay between ox actuation start and ignition in ms
+#define FIRING_TIMEOUT			900 // timeout if ox valve does not open within this time, engine does not ignite
+// FIRING_TIMEOUT needs to be less than or equal to FIRING_DELAY
 
 // copy-paste from Adafruit MAX31855 library
 //#if (ARDUINO >= 100)
@@ -261,13 +263,27 @@ namespace ignition
 		{
 			Serial.println("$Firing...");
 			int startTime = millis();
+			Serial.println("$Ox Valve Opening");
 			OxActuation::moveTo(OxActuation::actuate);
-			while (millis() - startTime < FIRING_DELAY && !(OxActuation::control()));
-			while (millis() - startTime < FIRING_DELAY);
+			while (!OxActuation::control() && millis() - startTime < FIRING_TIMEOUT);
+			if (OxActuation::checkState() != OxActuation::actuate)
+			{
+				// ox actuation did not actuate properly!!
+				OxActuation::motorSetSpeed(0); // stop ox actuation from moving further!!
+				Serial.println("$ERROR: Ox Valve did not open properly/in time");
+				return;
+			}
+			while (startTime < FIRING_DELAY);
 			digitalWrite(IGN_PIN, HIGH);
-			while (!OxActuation::control());
 			delay(1000);
 			digitalWrite(IGN_PIN, LOW);
+			//while (millis() - startTime < FIRING_DELAY && !(OxActuation::control()));
+			//while (millis() - startTime < FIRING_DELAY);
+			//Serial.println("$Igniting");
+			//digitalWrite(IGN_PIN, HIGH);
+			//while (!OxActuation::control() && millis() - startTime < );
+			//delay(1000);
+			//digitalWrite(IGN_PIN, LOW);
 		}
 	}
 
