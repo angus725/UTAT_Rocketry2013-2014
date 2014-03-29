@@ -21,23 +21,18 @@
 #define PRINTDOUBLE(value, precision) printDouble(value, precision)
 
 
-
 #define PIN_OX_SWITCHACTUATE	9
 #define PIN_OX_SWITCHVENT		8
 #define PIN_OX_CW				11
 #define PIN_OX_CCW				3
 
-#define C_OX_VENT				'1'
-#define C_OX_ACTUATE			'2'
-#define C_OX_OFF				'3'
-#define C_OX_CHECK				'4'
-//#define C_OX_CALIBRATE
 
-#define OX_STATE_VENT			1
-#define OX_STATE_ACTUATE		2
-#define OX_STATE_OFF			0
-#define OX_STATE_MOVING			3
+//#define OX_STATE_VENT			1
+//#define OX_STATE_ACTUATE		2
+//#define OX_STATE_OFF			0
+//#define OX_STATE_MOVING			3
 //#define OX_STATE_CALIBRATE
+
 
 #define OX_SPEED_TOACTUATE		255
 #define OX_SPEED_TOVENT			-255
@@ -45,7 +40,7 @@
 
 #define OX_COUNTSTOCENTER		525
 
-
+#define FIRING_DELAY			1500 // delay between ox actuation start and ignition in ms
 
 
 /***************************************************
@@ -95,22 +90,157 @@ void printDouble(double val, unsigned int precision);
 
 namespace OxActuation
 {
-	int state; // current/target state
-	int motorSpeed; // keeps track of current motor speed
-	void init();
-	int checkState();
-	void moveTo(int commandState);
-	void control();
 
+	enum oxidizerState
+	{
+		off = 0,
+		vent = 1,
+		actuate = 2,
+		moving = 3
+	};
+	//#define OX_STATE_CALIBRATE
+
+	void init();
+	oxidizerState checkState();
+	void moveTo(oxidizerState commandState);
+	bool control();
+
+	oxidizerState state; // current/target state
+	int motorSpeed; // keeps track of current motor speed
 	void initTimer1Count();
-	int checkStateInternal();
+	oxidizerState checkStateInternal();
 	void motorSetSpeed(int pwmSpd);
 }
 
+namespace OxActuation
+{
+	void init()
+	{
+		initTimer1Count();
+		motorSpeed = 0;
+		state = checkStateInternal();
+	}
+
+	oxidizerState checkState()
+	{
+		if (motorSpeed == 0)
+			return moving;
+		return checkStateInternal();
+	}
+
+	// returns state of ox motor
+	// does not take into the account the fact that motor is moving
+	// blindly checks microswitches & assumes if neither are triggered
+	// then motor is in OFF position
+	oxidizerState checkStateInternal()
+	{
+		if (digitalRead(PIN_OX_SWITCHACTUATE) == LOW)
+			return actuate;
+		if (digitalRead(PIN_OX_SWITCHVENT) == LOW)
+			return vent;
+		return off;
+	}
+
+	// this sets the target state & starts the motor moving
+	// clear counter if needed
+	void moveTo(oxidizerState commandState)
+	{
+		// check if current state == command state
+		if (commandState == state)
+			return;
+		switch (commandState)
+		{
+		case vent:
+			motorSetSpeed(OX_SPEED_TOVENT); // towards vent
+			break;
+		case actuate:
+			motorSetSpeed(OX_SPEED_TOACTUATE); // towards actuate
+			break;
+		case off:
+			TCNT1 = 0;
+			if (state == vent)
+				motorSetSpeed(OX_SPEED_TOACTUATE); // away from vent
+			if (state == actuate)
+				motorSetSpeed(OX_SPEED_TOVENT); // away from actuate
+			break;
+		}
+		state = commandState;
+	}
+
+	// polls to see if motor needs to be stopped
+	// take into account motorSpeed - if motorspeed is 0 and target is off then assume off state
+	// Off - check if count > limit, stop motor
+	// Actuate or vent - check if microswitch triggered, stop motor
+	bool control()
+	{
+		// check if moving
+		if (motorSpeed == 0)
+			return false;
+		// check state
+		switch (state)
+		{
+		case vent:
+			if (digitalRead(PIN_OX_SWITCHVENT) == LOW)
+			{
+				motorSpeed = 0;
+				return true;
+			}
+			break;
+		case actuate:
+			if (digitalRead(PIN_OX_SWITCHACTUATE) == LOW)
+			{
+				motorSpeed = 0;
+				return true;
+			}
+
+			break;
+		case off:
+			if (TCNT1 >= OX_COUNTSTOCENTER)
+			{
+				motorSpeed = 0;
+				return true;
+			}
+			break;
+		default:
+		}
+		return false;
+	}
+
+	void initTimer1Count()
+	{
+		TCCR1A = 0;        // reset timer/counter control register A
+		bitSet(TCCR1B, CS12);  // Counter Clock source is external pin
+		bitSet(TCCR1B, CS11);  // Clock on rising edge
+	}
+
+	// positive is CCW
+	// use with OX_SPEED_XX
+	void motorSetSpeed(int pwmSpd)
+	{
+		// if speed is zero, this brakes
+		motorSpeed = pwmSpd;
+		if (pwmSpd >= 0)
+		{
+			analogWrite(PIN_OX_CW, 0);
+			analogWrite(PIN_OX_CCW, pwmSpd);
+		}
+		else
+		{
+			analogWrite(PIN_OX_CCW, 0);
+			analogWrite(PIN_OX_CW, -pwmSpd);
+		}
+	}
+
+	/*
+	void calibrate()
+	{
+
+	}
+	*/
+}
 
 namespace ignition
 {
-
 	void continuityCheck()
 	{
 		Serial.println("$Performing Continuity Test...");
@@ -150,7 +280,14 @@ namespace ignition
 		if ((continuity == true) && (isArmed == true))
 		{
 			Serial.println("$Firing...");
+			int startTime = millis();
+			OxActuation::moveTo(OxActuation::actuate);
+			while (millis() - startTime < FIRING_DELAY && !(OxActuation::control());
+			while (millis() - startTime < FIRING_DELAY);
 			digitalWrite(IGN_PIN, HIGH);
+			while (!OxActuation::control());
+			delay(1000);
+			digitalWrite(IGN_PIN, LOW);
 		}
 	}
 
@@ -341,12 +478,12 @@ namespace thermo
 
 	bool thermoFail = false;
 	bool	thermoEnable1 = false,
-			thermoEnable2 = false,
-			thermoEnable3 = false;
+		thermoEnable2 = false,
+		thermoEnable3 = false;
 	bool readThermo;
 
 	bool checkError(Adafruit_MAX31855 checkThis, int reference, bool silent);
-		//prototype
+	//prototype
 
 	Adafruit_MAX31855
 		thermo1(SCK_CUSTOM, THERMO_1_SELECTOR, MOSI_CUSTOM),
@@ -500,19 +637,28 @@ namespace thermo
 
 void setup()
 {
-
+	// initialize serial communications at 9600 bps:
 	Serial.begin(9600);
 
 	delay(500);
 	thermo::checkAll();
 
-	// initialize serial communications at 9600 bps:
+	//oxidizer actuation
+	pinMode(PIN_OX_SWITCHACTUATE, INPUT_PULLUP);
+	pinMode(PIN_OX_SWITCHVENT, INPUT_PULLUP);
+	pinMode(PIN_OX_CW, OUTPUT);
+	pinMode(PIN_OX_CCW, OUTPUT);
+
+
 	pinMode(ARM_PIN, OUTPUT);
 	pinMode(IGN_PIN, OUTPUT);
 	digitalWrite(ARM_PIN, 0);
 	boolean isArmed = false;
 	digitalWrite(IGN_PIN, 0);
 	boolean continuity = false;
+
+
+	OxActuation::init();
 
 	//Print menu to Serial
 	Serial.print("$a = arm\n$d = disarm\n$f = fire\n$c = continuity\n$r = reset program");
@@ -547,6 +693,8 @@ void loop()
 		}
 		else
 			thermo::checkAll();
+		
+
 		delay(500);
 	}
 	;
@@ -598,15 +746,15 @@ void printInteger(int value)
 /*
 void printDouble(double value, int precision)
 {
-	precision = pow(10, precision);
-	Serial.print(int(value));  //prints the int part
-	Serial.print("."); // print the decimal point
-	int frac;
-	if (value >= 0)
-		frac = (value - int(value)) * precision;
-	else
-		frac = (int(value) - value) * precision;
-	Serial.print(frac, DEC);
+precision = pow(10, precision);
+Serial.print(int(value));  //prints the int part
+Serial.print("."); // print the decimal point
+int frac;
+if (value >= 0)
+frac = (value - int(value)) * precision;
+else
+frac = (int(value) - value) * precision;
+Serial.print(frac, DEC);
 }
 */
 

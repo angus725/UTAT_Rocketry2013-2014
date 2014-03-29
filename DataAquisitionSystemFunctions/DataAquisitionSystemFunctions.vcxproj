@@ -75,6 +75,9 @@
   <ItemGroup>
     <ClInclude Include="Visual Micro\.DataAquisitionSystemFunctions.vsarduino.h" />
   </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="OxActuation_Polling.cpp" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
