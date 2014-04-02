@@ -1,3 +1,17 @@
+/*	Integrated Test Firing Code 2014
+*	UTAT Rocketry 2013-2014
+*/	Angus Liu, Hayden lau, Sanjeev Narayanaswamy
+
+// Features to be implemented
+//
+// Ox Actuation:
+// True positional awareness
+// slow vent
+// 
+// move to main
+// auto check continuity when arming
+// clean up code in general
+
 // SPI interface and selectors
 #ifdef SCK
 #define SCK_CUSTOM SCK
@@ -171,6 +185,7 @@ namespace OxActuation
 			if (digitalRead(PIN_OX_SWITCHVENT) == LOW)
 			{
 				motorSetSpeed(0);
+				Serial.println("Motor at VENT");
 				return true;
 			}
 			break;
@@ -178,6 +193,7 @@ namespace OxActuation
 			if (digitalRead(PIN_OX_SWITCHACTUATE) == LOW)
 			{
 				motorSetSpeed(0);
+				Serial.println("Motor at ACTUATE");
 				return true;
 			}
 			break;
@@ -185,6 +201,7 @@ namespace OxActuation
 			if (motorSpeed > 0 && TCNT_ >= OX_COUNTSTOOFF_FROMVENT || motorSpeed < 0 && TCNT_ >= OX_COUNTSTOOFF_FROMACTUATE)
 			{
 				motorSetSpeed(0);
+				Serial.println("Motor at OFF");
 				return true;
 			}
 			break;
@@ -262,21 +279,23 @@ namespace ignition
 		if ((continuity == true) && (isArmed == true))
 		{
 			Serial.println("$Firing...");
-			int startTime = millis();
+			unsigned long startTime = millis();
 			Serial.println("$Ox Valve Opening");
 			OxActuation::moveTo(OxActuation::actuate);
-			while (!OxActuation::control() && millis() - startTime < FIRING_TIMEOUT);
-			if (OxActuation::checkState() != OxActuation::actuate)
+			while (!OxActuation::control() && (millis() - startTime < FIRING_TIMEOUT));
+			if (millis() - startTime >= FIRING_TIMEOUT) // changed this from checking the actual state of the motor b/c switch bounce issues
 			{
 				// ox actuation did not actuate properly!!
+				Serial.println(OxActuation::checkState());
 				OxActuation::motorSetSpeed(0); // stop ox actuation from moving further!!
 				Serial.println("$ERROR: Ox Valve did not open properly/in time");
 				return;
 			}
-			while (startTime < FIRING_DELAY);
+			while (millis() - startTime < FIRING_DELAY);
 			digitalWrite(IGN_PIN, HIGH);
 			delay(1000);
 			digitalWrite(IGN_PIN, LOW);
+			// old code for firing - no failsafe for ox actuation not opening
 			//while (millis() - startTime < FIRING_DELAY && !(OxActuation::control()));
 			//while (millis() - startTime < FIRING_DELAY);
 			//Serial.println("$Igniting");
@@ -663,11 +682,20 @@ void loop()
 		Serial.print("$Circuit is Disarmed");
 	Serial.println("$ - Waiting for command:");
 	// wait for input
-	while (!(Serial.available() > 0));
+	while (!(Serial.available() > 0))
+		OxActuation::control();
 	inputChar = Serial.read();
 	Serial.println("$acknowledged\n"); // acknowledge possible command
 	switch (inputChar)
 	{ // which command was it?
+	case 'v':
+	case 'V':
+		OxActuation::moveTo(OxActuation::vent);
+		break;
+	case 'o':
+	case 'O':
+		OxActuation::moveTo(OxActuation::off);
+		break;
 	case 'a':
 	case 'A':
 		ignition::arm();
