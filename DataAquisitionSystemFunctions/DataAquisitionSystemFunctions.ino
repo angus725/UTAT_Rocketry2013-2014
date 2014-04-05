@@ -1,6 +1,7 @@
 /*	Integrated Test Firing Code 2014
 *	UTAT Rocketry 2013-2014
-*/	Angus Liu, Hayden lau, Sanjeev Narayanaswamy
+*	Angus Liu, Hayden lau, Sanjeev Narayanaswamy
+*/
 
 // Features to be implemented
 //
@@ -47,6 +48,9 @@
 #define OX_COUNTSTOOFF_FROMVENT		725
 #define OX_COUNTSTOOFF_FROMACTUATE	675
 
+#define OFF_TO_SLOW_VENT		125	//offset between OX_COUNTSTOOFF_FROMVENT and slow vent
+
+
 #define FIRING_DELAY			900 // delay between ox actuation start and ignition in ms
 #define FIRING_TIMEOUT			900 // timeout if ox valve does not open within this time, engine does not ignite
 // FIRING_TIMEOUT needs to be less than or equal to FIRING_DELAY
@@ -90,7 +94,8 @@ namespace OxActuation
 		off = 0,
 		vent = 1,
 		actuate = 2,
-		moving = 3 // not used in internal
+		moving = 3, // not used in internal
+		slowvent = 4
 	};
 
 	void init(); // initialize the entire thing, place in setup()
@@ -160,9 +165,16 @@ namespace OxActuation
 			break;
 		case off:
 			TCNT_ = 0;
-			if (state == vent)
+			if (state == vent || slowvent)
 				motorSetSpeed(OX_SPEED_TOACTUATE); // away from vent
 			if (state == actuate)
+				motorSetSpeed(OX_SPEED_TOVENT); // away from actuate
+
+			break;
+		case slowvent:
+			if (state == vent)
+				motorSetSpeed(OX_SPEED_TOACTUATE); // away from vent
+			if (state == actuate || off)
 				motorSetSpeed(OX_SPEED_TOVENT); // away from actuate
 			break;
 		}
@@ -202,6 +214,15 @@ namespace OxActuation
 			{
 				motorSetSpeed(0);
 				Serial.println("Motor at OFF");
+				return true;
+			}
+			break;
+
+		case slowvent:
+			if (motorSpeed > 0 && TCNT_ >= (OX_COUNTSTOOFF_FROMVENT - OFF_TO_SLOW_VENT) || motorSpeed < 0 && TCNT_ >= (OX_COUNTSTOOFF_FROMACTUATE + OFF_TO_SLOW_VENT))
+			{
+				motorSetSpeed(0);
+				Serial.println("Motor at slow_vent");
 				return true;
 			}
 			break;
@@ -668,7 +689,11 @@ void setup()
 	OxActuation::init();
 
 	//Print menu to Serial
-	Serial.print("$a = arm\n$d = disarm\n$f = fire\n$c = continuity\n$t = thermocouple\n$r = reset program\n\n");
+	Serial.print("$a = arm\n$d = disarm\n$f = fire\n$c = continuity\n$t = thermocouple\n");
+	Serial.print("$v = oxidizer valve vent\n");
+	Serial.print("$s = oxidizer valve slow vent\n");
+	Serial.print("$o = oxidizer valve off\n");
+	Serial.print("$r = reset program\n\n");
 }
 
 void loop()
@@ -695,6 +720,10 @@ void loop()
 	case 'o':
 	case 'O':
 		OxActuation::moveTo(OxActuation::off);
+		break;
+	case 's':
+	case 'S':
+		OxActuation::moveTo(OxActuation::slowvent);
 		break;
 	case 'a':
 	case 'A':
