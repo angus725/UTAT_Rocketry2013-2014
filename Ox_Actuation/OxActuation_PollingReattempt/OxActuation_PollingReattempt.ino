@@ -30,16 +30,23 @@
 #define C_OX_VENT				'1'
 #define C_OX_ACTUATE			'2'
 #define C_OX_OFF				'3'
-#define C_OX_CHECKSTATE			'4'
-#define C_OX_CHECKSPEED			'5'
+#define C_OX_SLOWVENT			'4'
+#define C_OX_STEP_FORWARD		'5'
+#define C_OX_STEP_REVERSE		'6'
+#define C_OX_CHECKSTATE			'7'
+#define C_OX_CHECKSPEED			'8'
 //#define C_OX_CALIBRATE
 
 // constants related to the control
-#define OX_SPEED_TOACTUATE		255
-#define OX_SPEED_TOVENT			-255
-//#define OX_SPEED_OFF			0
-#define OX_COUNTSTOOFF_FROMVENT		725
-#define OX_COUNTSTOOFF_FROMACTUATE	675
+#define OX_SPEED_TOACTUATE			255
+#define OX_SPEED_TOVENT				-255
+#define OX_COUNTS_VENTTOOFF			690
+#define OX_COUNTS_ACTUATETOOFF		665
+#define OX_COUNTS_VENTTOSLOWVENT	475
+#define OX_COUNTS_ACTUATETOSLOWVENT	875
+#define OX_COUNTS_OFFTOSLOWVENT		400
+#define OX_COUNTS_SLOWVENTTOOFF		200
+#define OX_COUNTS_DX				20	// minimum distance moved
 
 namespace OxActuation
 {
@@ -48,15 +55,19 @@ namespace OxActuation
 		off = 0,
 		vent = 1,
 		actuate = 2,
-		moving = 3 // not used in internal
+		moving = 3, // not used in internal
+		slowVent = 4,
+		undefined = 5
 	};
 
 	void init(); // initialize the entire thing, place in setup()
 	oxidizerState checkState(); // check the state of the oxidizer
 	void moveTo(oxidizerState commandState); // main actuation function
 	bool control();
-
+	void moveStep(bool isForward);
+	
 	oxidizerState state; // current/target state
+	oxidizerState prevState; // previous state
 	int motorSpeed; // keeps track of current motor speed
 	void initTimerCount();
 	oxidizerState checkStateInternal();
@@ -92,6 +103,18 @@ void loop()
 			Serial.println("Moving to OFF");
 			OxActuation::moveTo(OxActuation::off);
 			break;
+		case C_OX_SLOWVENT:
+			Serial.println("Moving to SLOWVENT");
+			OxActuation::moveTo(OxActuation::slowVent);
+			break;
+		case C_OX_STEP_FORWARD:
+			Serial.println("Stepping toward ACTUATE");
+			OxActuation::moveStep(true);
+			break;
+		case C_OX_STEP_REVERSE:
+			Serial.println("Stepping toward VENT");
+			OxActuation::moveStep(false);
+			break;
 		case C_OX_CHECKSTATE:
 			switch (OxActuation::checkState())
 			{
@@ -121,14 +144,17 @@ void loop()
 		}
 		// if want to print status, print here
 	}
+	OxActuation::control();
 	//Serial.print("Speed:");
 	//Serial.print(OxActuation::motorSpeed);
 	//Serial.print(" State:");
-	//Serial.println(OxActuation::checkStateInternal());
-	OxActuation::control();
+	//Serial.println(OxActuation::state);
+	//Serial.print("prevstate: ");
+	//Serial.println(OxActuation::prevState);
 	//Serial.println(TCNT_);
 	//delay(100);
 }
+
 
 namespace OxActuation
 {
@@ -145,6 +171,7 @@ namespace OxActuation
 		initTimerCount();
 		motorSpeed = 0;
 		state = checkStateInternal();
+		prevState = state;
 	}
 
 	// the 'clean' version of checkState, returns moving if it's moving
@@ -152,6 +179,8 @@ namespace OxActuation
 	{
 		if (motorSpeed != 0)
 			return moving;
+		else if (state == undefined)
+			return undefined;
 		return checkStateInternal();
 	}
 
@@ -159,6 +188,7 @@ namespace OxActuation
 	// does not take into the account the fact that motor is moving
 	// blindly checks microswitches & assumes if neither are triggered
 	// then motor is in OFF position
+	// does not take into account slowVent/undefined state
 	oxidizerState checkStateInternal()
 	{
 		if (digitalRead(PIN_OX_SWITCHACTUATE) == LOW)
@@ -175,6 +205,12 @@ namespace OxActuation
 		// check if current state == command state
 		if (commandState == state)
 			return;
+		// if state is undefined, need to go to a defined position first
+		if (state == undefined && commandState != vent && commandState != actuate)
+		{
+			Serial.println("WARNING: State Undefined, cannot moveTo commanded position");
+			return;
+		}
 		switch (commandState)
 		{
 		case vent:
@@ -185,15 +221,40 @@ namespace OxActuation
 			break;
 		case off:
 			TCNT_ = 0;
-			if (state == vent)
+			if (state == vent || state == slowVent)
 				motorSetSpeed(OX_SPEED_TOACTUATE); // away from vent
 			if (state == actuate)
 				motorSetSpeed(OX_SPEED_TOVENT); // away from actuate
 			break;
+		case slowVent:
+			TCNT_ = 0;
+			if (state == vent)
+				motorSetSpeed(OX_SPEED_TOACTUATE); // away from vent
+			if (state == actuate || state == off)
+				motorSetSpeed(OX_SPEED_TOVENT); // away from actuate
+			break;
+		default:
+			Serial.println("WARNING: Invalid argument in OxActuation::moveTo()");
+			break;
 		}
+		prevState = state;
 		state = commandState;
 	}
-
+	
+	// manually move a step forward or backward
+	// leaves the state in 'undefined'
+	// to define the state again move to actuate/vent
+	// forward is towards actuate
+	void moveStep(bool isForward)
+	{
+		TCNT_ = 0;
+		if (isForward)
+			motorSetSpeed(OX_SPEED_TOACTUATE);
+		else
+			motorSetSpeed(OX_SPEED_TOVENT);
+		state = undefined;
+	}
+	
 	// polls to see if motor needs to be stopped
 	// take into account motorSpeed - if motorspeed is 0 and target is off then assume off state
 	// Off - check if count > limit, stop motor
@@ -210,6 +271,7 @@ namespace OxActuation
 			if (digitalRead(PIN_OX_SWITCHVENT) == LOW)
 			{
 				motorSetSpeed(0);
+				Serial.println("Motor at VENT");
 				return true;
 			}
 			break;
@@ -217,15 +279,40 @@ namespace OxActuation
 			if (digitalRead(PIN_OX_SWITCHACTUATE) == LOW)
 			{
 				motorSetSpeed(0);
+				Serial.println("Motor at ACTUATE");
 				return true;
 			}
 			break;
 		case off:
-			if (motorSpeed > 0 && TCNT_ >= OX_COUNTSTOOFF_FROMVENT || motorSpeed < 0 && TCNT_ >= OX_COUNTSTOOFF_FROMACTUATE)
+			if ((prevState == actuate && TCNT_ >= OX_COUNTS_ACTUATETOOFF) ||
+				(prevState == vent && TCNT_ >= OX_COUNTS_VENTTOOFF) ||
+				(prevState == slowVent && TCNT_ >= OX_COUNTS_SLOWVENTTOOFF))
 			{
 				motorSetSpeed(0);
+				Serial.println("Motor at OFF");
 				return true;
 			}
+			break;
+		case slowVent:
+			if ((prevState == actuate && TCNT_ >= OX_COUNTS_ACTUATETOSLOWVENT) ||
+				(prevState == vent && TCNT_ >= OX_COUNTS_VENTTOSLOWVENT) ||
+				(prevState == off && TCNT_ >= OX_COUNTS_OFFTOSLOWVENT))
+			{
+				motorSetSpeed(0);
+				Serial.println("Motor at SLOWVENT");
+				return true;
+			}
+			break;
+		case undefined:
+			if (TCNT_ >= OX_COUNTS_DX)
+			{
+				motorSetSpeed(0);
+				Serial.println("Motor stepped");
+				return true;
+			}
+			break;
+		default:
+			Serial.println("ERROR: Invalid target state in OxActuation::control()");
 			break;
 		}
 		return false;
@@ -233,15 +320,8 @@ namespace OxActuation
 
 	void initTimerCount()
 	{
-#ifdef MEGA
 		TCCR5A = 0x00;        // using Timer 5 b/c T5 pin
 		TCCR5B = 0x07;
-#endif
-#ifdef UNO
-		TCCR1A = 0x00;
-		bitSet(TCCR1B, CS12);  // Counter Clock source is external pin
-		bitSet(TCCR1B, CS11);  // Clock on rising edge  
-#endif
 	}
 
 	// positive is CCW
