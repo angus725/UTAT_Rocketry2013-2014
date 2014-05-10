@@ -696,6 +696,10 @@ void loop()
 	case 'O':
 		OxActuation::moveTo(OxActuation::off);
 		break;
+	case 'm':
+	case 'M':
+		OxActuation::moveTo(OxActuation::actuate);
+		break;
 	case 'a':
 	case 'A':
 		ignition::arm();
