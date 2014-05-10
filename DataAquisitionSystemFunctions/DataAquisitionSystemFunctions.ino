@@ -1,6 +1,7 @@
 /*	Integrated Test Firing Code 2014
 *	UTAT Rocketry 2013-2014
-*/	Angus Liu, Hayden lau, Sanjeev Narayanaswamy
+*	Angus Liu, Hayden lau, Sanjeev Narayanaswamy
+*/
 
 // Features to be implemented
 //
