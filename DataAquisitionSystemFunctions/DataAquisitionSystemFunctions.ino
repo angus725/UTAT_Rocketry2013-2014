@@ -243,18 +243,18 @@ namespace ignition
 {
 	void continuityCheck()
 	{
-		Serial.println("$Performing Continuity Test...");
+		Serial.println("Performing Continuity Test...");
 		continuityRaw = analogRead(IGN_CONT_PIN);
 		//Serial.println(continuityRaw);
 
 		if (continuityRaw < contLow || continuityRaw > contHigh)
 		{
-			Serial.println("$ERROR: CONTINUITY PROBLEM");
+			Serial.println("ERROR: CONTINUITY PROBLEM");
 			continuity = false;
 		}
 		else
 		{
-			Serial.println("$Continuity Acceptable");
+			Serial.println("Continuity Acceptable");
 			continuity = true;
 		}
 
@@ -262,14 +262,14 @@ namespace ignition
 
 	void arm()
 	{ // arms the circuit
-		Serial.println("$Arming...");
+		Serial.println("Arming...");
 		digitalWrite(ARM_PIN, HIGH);
 		isArmed = true;
 	}
 
 	void disarm()
 	{ // disarms the circuit
-		Serial.println("$Disarming...");
+		Serial.println("Disarming...");
 		digitalWrite(IGN_PIN, LOW);
 		digitalWrite(ARM_PIN, LOW);
 		isArmed = false;
@@ -279,23 +279,27 @@ namespace ignition
 	{//fires the circuit if armed and continuity is satisfied
 		if ((continuity == true) && (isArmed == true))
 		{
-			Serial.println("$Firing...");
+			Serial.println("Firing...");
 			unsigned long startTime = millis();
-			Serial.println("$Ox Valve Opening");
+			unsigned long endTime;
+			Serial.println("Ox Valve Opening");
 			OxActuation::moveTo(OxActuation::actuate);
 			while (!OxActuation::control() && (millis() - startTime < FIRING_TIMEOUT));
 			if (millis() - startTime >= FIRING_TIMEOUT) // changed this from checking the actual state of the motor b/c switch bounce issues
 			{
 				// ox actuation did not actuate properly!!
 				Serial.println(OxActuation::checkState());
-				OxActuation::motorSetSpeed(0); // stop ox actuation from moving further!!
-				Serial.println("$ERROR: Ox Valve did not open properly/in time");
+				OxActuation::motorSetSpeed(0); // stop ox actuation from continuing to attempt to move
+				Serial.println("ERROR: Ox Valve did not open properly or in time");
 				return;
 			}
+			endTime = millis();
 			while (millis() - startTime < FIRING_DELAY);
 			digitalWrite(IGN_PIN, HIGH);
 			delay(1000);
 			digitalWrite(IGN_PIN, LOW);
+			Serial.print("Ox Valve Opening Time (ms): ");
+			Serial.println(endTime - startTime);
 			// old code for firing - no failsafe for ox actuation not opening
 			//while (millis() - startTime < FIRING_DELAY && !(OxActuation::control()));
 			//while (millis() - startTime < FIRING_DELAY);
@@ -669,7 +673,8 @@ void setup()
 	OxActuation::init();
 
 	//Print menu to Serial
-	Serial.print("$a = arm\n$d = disarm\n$f = fire\n$c = continuity\n$t = thermocouple\n$r = reset program\n\n");
+	Serial.print("a = arm\nd = disarm\nf = fire\nc = continuity\nt = thermocouple\nv = ox valve to vent\no = ox valve to off\nm = ox valve to main\nr = reset program\n");
+//	Serial.println("Status message: Arm state - Ox state - Waiting for Command:");
 }
 
 void loop()
@@ -678,27 +683,50 @@ void loop()
 	while (Serial.available() > 0) Serial.read();
 	// status message
 	if (isArmed)
-		Serial.print("$ - ARMED");
+		Serial.print("ARMED");
 	else
-		Serial.print("$Circuit is Disarmed");
-	Serial.println("$ - Waiting for command:");
+		Serial.print("Disarmed");
+	// print status of ox valve
+	switch (OxActuation::checkState())
+	{
+	case OxActuation::actuate:
+		Serial.print(" - MAIN");
+		break;
+	case OxActuation::vent:
+		Serial.print(" - VENT");
+		break;
+	case OxActuation::off:
+		Serial.print(" - off");
+		break;
+	case OxActuation::moving:
+		Serial.print(" - MOVING");
+		break;
+	default:
+		Serial.print(" - INVALID STATE");
+		break;
+	}
+	Serial.println(" - Waiting for command:");
 	// wait for input
 	while (!(Serial.available() > 0))
 		OxActuation::control();
 	inputChar = Serial.read();
-	Serial.println("$acknowledged\n"); // acknowledge possible command
+	while (Serial.available()) Serial.read();
+	Serial.println("acknowledged\n"); // acknowledge possible command
 	switch (inputChar)
 	{ // which command was it?
 	case 'v':
 	case 'V':
+		Serial.println("Moving ox valve to VENT...");
 		OxActuation::moveTo(OxActuation::vent);
 		break;
 	case 'o':
 	case 'O':
+		Serial.println("Moving ox valve to OFF...");
 		OxActuation::moveTo(OxActuation::off);
 		break;
 	case 'm':
 	case 'M':
+		Serial.println("Moving ox valve to MAIN...");
 		OxActuation::moveTo(OxActuation::actuate);
 		break;
 	case 'a':
@@ -735,14 +763,14 @@ void loop()
 	case 'R':
 		//Setting the output pins to low before resetting
 		ignition::disarm();
-		Serial.print("$Resetting...");
+		Serial.print("Resetting...");
 		Serial.print("\n\n\n");
 		Serial.flush(); // wait for serial to finish transmitting
 		resetFunc(); // reset software completely
 		break;
 
 	default:
-		Serial.println("$Error - no matching case");
+		Serial.println("Warning - no matching case");
 		break;
 	}
 
@@ -755,21 +783,6 @@ void printInteger(int value)
 
 	return;
 }
-
-/*
-void printDouble(double value, int precision)
-{
-precision = pow(10, precision);
-Serial.print(int(value));  //prints the int part
-Serial.print("."); // print the decimal point
-int frac;
-if (value >= 0)
-frac = (value - int(value)) * precision;
-else
-frac = (int(value) - value) * precision;
-Serial.print(frac, DEC);
-}
-*/
 
 void printDouble(double val, unsigned int precision){
 	// prints val with number of decimal places determine by precision
